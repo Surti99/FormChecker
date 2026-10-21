@@ -1,2 +1,7 @@
-mediapipe>=0.10,<0.11
-opencv-python>=4.8,<5
+mediapipe==0.10.21
+numpy>=1.26,<2
+opencv-contrib-python>=4.8,<5
+streamlit>=1.40,<2
+imageio-ffmpeg>=0.5,<1
+streamlit-webrtc>=0.63,<1
+av>=12,<17
