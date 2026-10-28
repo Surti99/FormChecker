@@ -350,6 +350,16 @@ def render_squat_results(state: SquatState, output_key: str, filename: str) -> N
         "Flexion bands: 70–100° is the initial half-squat reference; above 100° "
         "is a deeper range. These are 2D camera estimates, not medical measurements."
     )
+    if state.rep_depths:
+        depth_rows = [
+            f"Rep {index}: {depth:.0f}° ({'deep range' if depth > 100 else 'half-squat reference'})"
+            for index, depth in enumerate(state.rep_depths, start=1)
+        ]
+        st.write("Peak knee flexion by completed rep")
+        st.bar_chart({"Peak knee flexion (degrees)": state.rep_depths})
+        st.caption(" · ".join(depth_rows))
+    else:
+        st.info("No complete rep reached the selected depth and returned to standing.")
     if state.issue_frames:
         st.write("Frames over selected cue thresholds")
         issue_labels = {
