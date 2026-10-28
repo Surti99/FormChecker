@@ -27,6 +27,7 @@ class SquatState:
     knee_tracking_deviation: float | None = None
     center_drift: float | None = None
     hip_center_baseline: float | None = None
+    hip_center_samples: list[float] = field(default_factory=list)
     standing_knee_offsets: list[tuple[float, float]] = field(default_factory=list)
     knee_offsets_baseline: tuple[float, float] | None = None
     analyzed_frames: int = 0
@@ -62,7 +63,7 @@ def _visible(*points: Any, minimum: float = 0.5) -> bool:
     return all(getattr(point, "visibility", 0.0) >= minimum for point in points)
 
 
-def _best_side(landmarks: Any, pose_module: Any) -> tuple[str, Any, Any, Any, Any, Any]:
+def _best_side(landmarks: Any, pose_module: Any) -> tuple[str, Any, Any, Any, Any, Any, Any]:
     candidates = []
     for side in ("RIGHT", "LEFT"):
         shoulder, hip, knee, ankle, heel, toe = (
@@ -158,11 +159,14 @@ def analyze_squat(
     center_drift = None
     if front_view:
         if state.hip_center_baseline is None:
-            state.hip_center_baseline = body_center
-        center_drift = abs(body_center - state.hip_center_baseline) / shoulder_width
-        state.center_drift = center_drift
-        if center_drift > center_drift_tolerance:
-            cues.append("Keep your center steadier")
+            state.hip_center_samples.append(body_center)
+            if len(state.hip_center_samples) >= 12:
+                state.hip_center_baseline = median(state.hip_center_samples)
+        if state.hip_center_baseline is not None:
+            center_drift = abs(body_center - state.hip_center_baseline) / shoulder_width
+            state.center_drift = center_drift
+            if center_drift > center_drift_tolerance:
+                cues.append("Keep your center steadier")
 
     if front_view:
         if knee_deviation is not None and knee_deviation > knee_tracking_tolerance:
