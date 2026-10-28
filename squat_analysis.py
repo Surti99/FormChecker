@@ -134,7 +134,7 @@ def analyze_squat(
         torso_lean = None
     else:
         side, shoulder, hip, knee, ankle, heel, toe = _best_side(landmarks, pose_module)
-        selected = (shoulder, hip, knee, ankle, heel, toe)
+        selected = (shoulder, hip, knee, ankle)
         if not _visible(*selected):
             state.last_cues = ["Turn slightly sideways and keep your full body visible"]
             return SquatFrame(None, None, None, None, state.phase,
