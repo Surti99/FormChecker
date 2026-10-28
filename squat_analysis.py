@@ -7,6 +7,7 @@ as unavailable for side-view footage.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from statistics import median
 from typing import Any
 
@@ -26,7 +27,7 @@ class SquatState:
     knee_tracking_deviation: float | None = None
     center_drift: float | None = None
     hip_center_baseline: float | None = None
-    standing_knee_offsets: list[float] = field(default_factory=list)
+    standing_knee_offsets: list[tuple[float, float]] = field(default_factory=list)
     knee_offsets_baseline: tuple[float, float] | None = None
     analyzed_frames: int = 0
     issue_frames: dict[str, int] = field(default_factory=dict)
@@ -116,21 +117,20 @@ def analyze_squat(
             offsets.append((knee.x - ankle.x) * inward)
         knee_deviation = None
         if state.knee_offsets_baseline is None:
-            state.standing_knee_offsets.append(offsets[0])
+            state.standing_knee_offsets.append((offsets[0], offsets[1]))
             if len(state.standing_knee_offsets) >= 12:
-                # Use the left-side offset as a stable calibration marker;
-                # right baseline is estimated from mirrored leg geometry.
-                base = median(state.standing_knee_offsets)
-                state.knee_offsets_baseline = (base, base)
+                state.knee_offsets_baseline = (
+                    median(sample[0] for sample in state.standing_knee_offsets),
+                    median(sample[1] for sample in state.standing_knee_offsets),
+                )
         if state.knee_offsets_baseline is not None:
             deviations = [
                 offsets[i] - state.knee_offsets_baseline[i] for i in range(2)
             ]
             knee_deviation = max(0.0, max(deviations)) / shoulder_width
-        side, shoulder, hip, knee, ankle, heel, toe = _best_side(landmarks, pose_module)
-        # Front-view knee angles are less reliable under foreshortening, but
-        # remain useful for phase and rep segmentation; display angle only.
-        knee_angle = calculate_angle(hip, knee, ankle)
+        left_angle = calculate_angle(lh, lk, la)
+        right_angle = calculate_angle(rh, rk, ra)
+        knee_angle = (left_angle + right_angle) / 2.0
         torso_lean = None
     else:
         side, shoulder, hip, knee, ankle, heel, toe = _best_side(landmarks, pose_module)
@@ -140,27 +140,29 @@ def analyze_squat(
             return SquatFrame(None, None, None, None, state.phase,
                               tuple(state.last_cues), False)
         knee_angle = calculate_angle(hip, knee, ankle)
-        torso_lean = __import__("math").degrees(
-            __import__("math").atan2(abs(shoulder.x - hip.x),
-                                     max(abs(shoulder.y - hip.y), 1e-4))
+        torso_lean = math.degrees(
+            math.atan2(abs(shoulder.x - hip.x),
+                       max(abs(shoulder.y - hip.y), 1e-4))
         )
         knee_deviation = None
         body_center = hip.x
-        shoulder_width = max(abs(shoulder.x - hip.x) * 2.0, 0.04)
+        shoulder_width = max(abs(shoulder.y - hip.y), 0.04)
         cues.append("Front view needed to assess knee tracking")
 
     flexion = max(0.0, min(180.0, 180.0 - knee_angle))
     state.current_flexion = flexion
     state.analyzed_frames += 1
 
-    # Center drift is a 2D screen-space proxy. It is shown as a metric, not
-    # presented as a clinical or force-plate balance measurement.
-    if state.hip_center_baseline is None:
-        state.hip_center_baseline = body_center
-    center_drift = abs(body_center - state.hip_center_baseline) / shoulder_width
-    state.center_drift = center_drift
-    if center_drift > center_drift_tolerance:
-        cues.append("Keep your center steadier")
+    # Front-view center drift is a screen-space sway proxy, not a clinical
+    # balance or force-plate measurement. Side-view hip travel is expected.
+    center_drift = None
+    if front_view:
+        if state.hip_center_baseline is None:
+            state.hip_center_baseline = body_center
+        center_drift = abs(body_center - state.hip_center_baseline) / shoulder_width
+        state.center_drift = center_drift
+        if center_drift > center_drift_tolerance:
+            cues.append("Keep your center steadier")
 
     if front_view:
         if knee_deviation is not None and knee_deviation > knee_tracking_tolerance:
@@ -198,7 +200,7 @@ def analyze_squat(
         state.issue_frames["torso"] = state.issue_frames.get("torso", 0) + 1
     if knee_deviation is not None and knee_deviation > knee_tracking_tolerance:
         state.issue_frames["knee_tracking"] = state.issue_frames.get("knee_tracking", 0) + 1
-    if center_drift > center_drift_tolerance:
+    if center_drift is not None and center_drift > center_drift_tolerance:
         state.issue_frames["stability"] = state.issue_frames.get("stability", 0) + 1
 
     state.last_cues = cues
